@@ -311,7 +311,7 @@
   <footer>
     <p>Brasa Braba &bull; Churrasco Premium para Eventos</p>
     <p>Obrigado pela preferência! Será um prazer atender o seu evento.</p>
-    <button type="button" class="admin-trigger" id="adminOpen">Acesso administrativo</button>
+    <button type="button" class="admin-trigger" id="adminOpen" onclick="document.getElementById('adminOverlay').classList.add('open'); document.getElementById('adminOverlay').setAttribute('aria-hidden', 'false');">Acesso administrativo</button>
   </footer>
 
   <div class="admin-overlay" id="adminOverlay" aria-hidden="true">
