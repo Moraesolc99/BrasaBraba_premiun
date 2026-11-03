@@ -1,151 +1,6 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
-  // Painel administrativo: o Supabase Auth autentica o login; o RLS protege as operações no banco.
-  var adminOverlay = document.getElementById("adminOverlay");
-  var adminStatus = document.getElementById("adminStatus");
-  var adminLoginForm = document.getElementById("adminLoginForm");
-  var adminDashboard = document.getElementById("adminDashboard");
-  var reservedList = document.getElementById("reservedList");
-
-  function showAdminStatus(message, type) {
-    adminStatus.textContent = message || "";
-    adminStatus.className = "admin-status" + (type ? " " + type : "");
-  }
-  function openAdmin() {
-    adminOverlay.classList.add("open");
-    adminOverlay.setAttribute("aria-hidden", "false");
-    showAdminStatus("");
-    if (!supabaseClient) {
-      showAdminStatus("O painel ainda não está configurado. Configure o Supabase antes de usar.", "error");
-    }
-  }
-  function closeAdmin() {
-    adminOverlay.classList.remove("open");
-    adminOverlay.setAttribute("aria-hidden", "true");
-  }
-  function renderAdminState(session) {
-    adminSession = session || null;
-    adminLoginForm.hidden = !!adminSession;
-    adminDashboard.hidden = !adminSession;
-    document.getElementById("adminTitle").textContent = adminSession
-      ? "Brasa Braba | Reservas"
-      : "Brasa Braba | Administração";
-    if (adminSession) loadAdminDates();
-  }
-  function loadAdminDates() {
-    if (!supabaseClient || !adminSession) return;
-    reservedList.textContent = "Carregando...";
-    supabaseClient.from("reserved_dates")
-      .select("event_date")
-      .gte("event_date", hojeISO())
-      .order("event_date", { ascending: true })
-      .then(function (result) {
-        if (result.error) {
-          reservedList.textContent = "Não foi possível carregar as reservas.";
-          showAdminStatus("Erro ao consultar reservas: " + result.error.message, "error");
-          return;
-        }
-        reservedList.textContent = "";
-        if (!result.data || !result.data.length) {
-          reservedList.textContent = "Nenhuma data reservada.";
-          return;
-        }
-        result.data.forEach(function (row) {
-          var item = document.createElement("div");
-          item.className = "admin-item";
-          var date = document.createElement("strong");
-          date.textContent = fmtData(row.event_date);
-          var remove = document.createElement("button");
-          remove.type = "button";
-          remove.textContent = "Liberar data";
-          remove.addEventListener("click", async function () {
-            if (!window.confirm("Deseja liberar " + fmtData(row.event_date) + "?")) return;
-            remove.disabled = true;
-            var deleted = await supabaseClient.from("reserved_dates")
-              .delete().eq("event_date", row.event_date);
-            if (deleted.error) {
-              remove.disabled = false;
-              showAdminStatus("Não foi possível liberar a data: " + deleted.error.message, "error");
-              return;
-            }
-            showAdminStatus("Data liberada com sucesso.", "success");
-            await refreshAvailability();
-            loadAdminDates();
-          });
-          item.append(date, remove);
-          reservedList.appendChild(item);
-        });
-      });
-  }
-
-  document.getElementById("adminOpen").addEventListener("click", openAdmin);
-  document.getElementById("adminClose").addEventListener("click", closeAdmin);
-  adminOverlay.addEventListener("click", function (event) {
-    if (event.target === adminOverlay) closeAdmin();
-  });
-  document.addEventListener("keydown", function (event) {
-    if (event.key === "Escape" && adminOverlay.classList.contains("open")) closeAdmin();
-  });
-
-  adminLoginForm.addEventListener("submit", async function (event) {
-    event.preventDefault();
-    if (!supabaseClient) return showAdminStatus("Supabase não configurado.", "error");
-    var email = document.getElementById("adminEmail").value.trim();
-    var password = document.getElementById("adminPassword").value;
-    showAdminStatus("Validando acesso...");
-    var result = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
-    if (result.error) {
-      showAdminStatus("E-mail ou senha inválidos, ou acesso não autorizado.", "error");
-      return;
-    }
-    adminLoginForm.reset();
-    showAdminStatus("Login realizado.", "success");
-    renderAdminState(result.data.session);
-  });
-
-  document.getElementById("adminLogout").addEventListener("click", async function () {
-    if (supabaseClient) await supabaseClient.auth.signOut();
-    renderAdminState(null);
-    showAdminStatus("Sessão encerrada.", "success");
-  });
-
-  document.getElementById("reserveDate").min = hojeISO();
-  document.getElementById("reserveForm").addEventListener("submit", async function (event) {
-    event.preventDefault();
-    if (!supabaseClient || !adminSession) return showAdminStatus("Faça login novamente.", "error");
-    var date = document.getElementById("reserveDate").value;
-    if (!date || date < hojeISO()) return showAdminStatus("Escolha uma data futura ou a data de hoje.", "error");
-    if (reservedDates.indexOf(date) !== -1) return showAdminStatus("Essa data já está reservada.", "error");
-
-    var result = await supabaseClient.from("reserved_dates").insert({
-      event_date: date,
-      created_by: adminSession.user.id
-    });
-    if (result.error) {
-      if (result.error.code === "23505") {
-        showAdminStatus("Essa data já foi cadastrada por outro acesso.", "error");
-      } else {
-        showAdminStatus("Não foi possível cadastrar a reserva: " + result.error.message, "error");
-      }
-      return;
-    }
-    document.getElementById("reserveDate").value = "";
-    showAdminStatus("Data bloqueada com sucesso.", "success");
-    await refreshAvailability();
-    loadAdminDates();
-  });
-
-  if (supabaseClient) {
-    supabaseClient.auth.getSession().then(function (result) {
-      renderAdminState(result.data ? result.data.session : null);
-    });
-    supabaseClient.auth.onAuthStateChange(function (_event, session) {
-      renderAdminState(session);
-    });
-  }
-
-</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js"></script>
 <script src="./supabase-config.js"></script>
@@ -808,6 +663,151 @@
   });
 </script>
 
+<script>
+// Painel administrativo: o Supabase Auth autentica o login; o RLS protege as operações no banco.
+  var adminOverlay = document.getElementById("adminOverlay");
+  var adminStatus = document.getElementById("adminStatus");
+  var adminLoginForm = document.getElementById("adminLoginForm");
+  var adminDashboard = document.getElementById("adminDashboard");
+  var reservedList = document.getElementById("reservedList");
+
+  function showAdminStatus(message, type) {
+    adminStatus.textContent = message || "";
+    adminStatus.className = "admin-status" + (type ? " " + type : "");
+  }
+  function openAdmin() {
+    adminOverlay.classList.add("open");
+    adminOverlay.setAttribute("aria-hidden", "false");
+    showAdminStatus("");
+    if (!supabaseClient) {
+      showAdminStatus("O painel ainda não está configurado. Configure o Supabase antes de usar.", "error");
+    }
+  }
+  function closeAdmin() {
+    adminOverlay.classList.remove("open");
+    adminOverlay.setAttribute("aria-hidden", "true");
+  }
+  function renderAdminState(session) {
+    adminSession = session || null;
+    adminLoginForm.hidden = !!adminSession;
+    adminDashboard.hidden = !adminSession;
+    document.getElementById("adminTitle").textContent = adminSession
+      ? "Brasa Braba | Reservas"
+      : "Brasa Braba | Administração";
+    if (adminSession) loadAdminDates();
+  }
+  function loadAdminDates() {
+    if (!supabaseClient || !adminSession) return;
+    reservedList.textContent = "Carregando...";
+    supabaseClient.from("reserved_dates")
+      .select("event_date")
+      .gte("event_date", hojeISO())
+      .order("event_date", { ascending: true })
+      .then(function (result) {
+        if (result.error) {
+          reservedList.textContent = "Não foi possível carregar as reservas.";
+          showAdminStatus("Erro ao consultar reservas: " + result.error.message, "error");
+          return;
+        }
+        reservedList.textContent = "";
+        if (!result.data || !result.data.length) {
+          reservedList.textContent = "Nenhuma data reservada.";
+          return;
+        }
+        result.data.forEach(function (row) {
+          var item = document.createElement("div");
+          item.className = "admin-item";
+          var date = document.createElement("strong");
+          date.textContent = fmtData(row.event_date);
+          var remove = document.createElement("button");
+          remove.type = "button";
+          remove.textContent = "Liberar data";
+          remove.addEventListener("click", async function () {
+            if (!window.confirm("Deseja liberar " + fmtData(row.event_date) + "?")) return;
+            remove.disabled = true;
+            var deleted = await supabaseClient.from("reserved_dates")
+              .delete().eq("event_date", row.event_date);
+            if (deleted.error) {
+              remove.disabled = false;
+              showAdminStatus("Não foi possível liberar a data: " + deleted.error.message, "error");
+              return;
+            }
+            showAdminStatus("Data liberada com sucesso.", "success");
+            await refreshAvailability();
+            loadAdminDates();
+          });
+          item.append(date, remove);
+          reservedList.appendChild(item);
+        });
+      });
+  }
+
+  document.getElementById("adminOpen").addEventListener("click", openAdmin);
+  document.getElementById("adminClose").addEventListener("click", closeAdmin);
+  adminOverlay.addEventListener("click", function (event) {
+    if (event.target === adminOverlay) closeAdmin();
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && adminOverlay.classList.contains("open")) closeAdmin();
+  });
+
+  adminLoginForm.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    if (!supabaseClient) return showAdminStatus("Supabase não configurado.", "error");
+    var email = document.getElementById("adminEmail").value.trim();
+    var password = document.getElementById("adminPassword").value;
+    showAdminStatus("Validando acesso...");
+    var result = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
+    if (result.error) {
+      showAdminStatus("E-mail ou senha inválidos, ou acesso não autorizado.", "error");
+      return;
+    }
+    adminLoginForm.reset();
+    showAdminStatus("Login realizado.", "success");
+    renderAdminState(result.data.session);
+  });
+
+  document.getElementById("adminLogout").addEventListener("click", async function () {
+    if (supabaseClient) await supabaseClient.auth.signOut();
+    renderAdminState(null);
+    showAdminStatus("Sessão encerrada.", "success");
+  });
+
+  document.getElementById("reserveDate").min = hojeISO();
+  document.getElementById("reserveForm").addEventListener("submit", async function (event) {
+    event.preventDefault();
+    if (!supabaseClient || !adminSession) return showAdminStatus("Faça login novamente.", "error");
+    var date = document.getElementById("reserveDate").value;
+    if (!date || date < hojeISO()) return showAdminStatus("Escolha uma data futura ou a data de hoje.", "error");
+    if (reservedDates.indexOf(date) !== -1) return showAdminStatus("Essa data já está reservada.", "error");
+
+    var result = await supabaseClient.from("reserved_dates").insert({
+      event_date: date,
+      created_by: adminSession.user.id
+    });
+    if (result.error) {
+      if (result.error.code === "23505") {
+        showAdminStatus("Essa data já foi cadastrada por outro acesso.", "error");
+      } else {
+        showAdminStatus("Não foi possível cadastrar a reserva: " + result.error.message, "error");
+      }
+      return;
+    }
+    document.getElementById("reserveDate").value = "";
+    showAdminStatus("Data bloqueada com sucesso.", "success");
+    await refreshAvailability();
+    loadAdminDates();
+  });
+
+  if (supabaseClient) {
+    supabaseClient.auth.getSession().then(function (result) {
+      renderAdminState(result.data ? result.data.session : null);
+    });
+    supabaseClient.auth.onAuthStateChange(function (_event, session) {
+      renderAdminState(session);
+    });
+  }
+</script>
 
 <style>
   .date-legend { display:flex; flex-wrap:wrap; gap:12px; color:var(--muted); font-size:12px; margin-top:-8px; }
