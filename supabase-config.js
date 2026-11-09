@@ -6,4 +6,4 @@ window.BRASA_SUPABASE_URL =
   "https://rcxyoihtoqobtmrcomqj.supabase.co";
 
 window.BRASA_SUPABASE_ANON_KEY =
-  "COLE_AQUI_A_NOVA_CHAVE_PUBLISHABLE";
+  "sb_publishable_oYScj57RLH4mn2r8umMJ0A_Vbt2gYaW";
